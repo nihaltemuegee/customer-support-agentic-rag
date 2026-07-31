@@ -1,9 +1,10 @@
 """
 Refund-related tool functions.
 
-Uses simple rule-based logic on top of the synthetic orders data to
-decide refund eligibility. This is a placeholder for a real refund
-policy engine.
+Applies simple, explicit demo rules on top of the synthetic orders
+data to decide refund eligibility and the recommended next step. This
+is a placeholder for a real refund policy engine, not real financial
+or legal logic.
 """
 
 from datetime import datetime
@@ -14,34 +15,54 @@ from src.tools.order_tools import _load_orders
 REFUND_WINDOW_DAYS = 30
 
 
-def check_refund_eligibility(order_id: str) -> dict[str, Any]:
+def check_refund_eligibility(order_id: str, damaged: bool = False) -> dict[str, Any]:
     """
-    Check whether an order is eligible for a refund.
+    Check whether an order is eligible for a refund, and what the
+    customer should do next.
 
     Rules (simplified, for demo purposes):
-    - Order not found -> not eligible.
-    - Cancelled orders -> eligible (full refund of the charge).
+    - Order not found -> not eligible; ask the customer to double-check the order id.
+    - damaged=True -> always eligible for a refund/replacement, regardless of status,
+      and the next step recommends contacting support / a ticket for follow-up.
+    - Cancelled orders -> eligible for a full refund.
     - Delivered orders -> eligible if within REFUND_WINDOW_DAYS of the order date.
-    - Orders that are processing/shipped/delayed -> not yet eligible,
-      since the item hasn't been delivered yet.
+    - Shipped orders -> not yet eligible; must wait until the order is delivered.
+    - Processing orders -> not eligible for a refund yet, but may still be cancelable.
+    - Delayed orders -> not yet eligible; recommend waiting or contacting support.
+    - Any other status -> recommend contacting support.
     """
     orders = _load_orders()
-    order = orders.get(order_id)
+    normalized_id = order_id.upper() if order_id else order_id
+    order = orders.get(normalized_id)
 
     if order is None:
         return {
-            "eligible": False,
+            "found": False,
             "order_id": order_id,
+            "eligible": False,
             "reason": f"No order found with id '{order_id}'.",
+            "next_step": "Please double-check your order id and try again.",
+        }
+
+    if damaged:
+        return {
+            "found": True,
+            "order_id": order_id,
+            "eligible": True,
+            "reason": "Damaged or defective items are eligible for a refund or replacement.",
+            "next_step": "Please contact support with a description (and photos, if possible); "
+                          "we'll open a support ticket to process your refund or replacement.",
         }
 
     status = order["status"]
 
     if status == "cancelled":
         return {
-            "eligible": True,
+            "found": True,
             "order_id": order_id,
+            "eligible": True,
             "reason": "Order was cancelled and is eligible for a full refund.",
+            "next_step": "A refund will be issued to your original payment method.",
         }
 
     if status == "delivered":
@@ -50,22 +71,54 @@ def check_refund_eligibility(order_id: str) -> dict[str, Any]:
 
         if days_since_order <= REFUND_WINDOW_DAYS:
             return {
-                "eligible": True,
+                "found": True,
                 "order_id": order_id,
+                "eligible": True,
                 "reason": f"Order was delivered {days_since_order} day(s) ago, "
                           f"within the {REFUND_WINDOW_DAYS}-day refund window.",
+                "next_step": "Start a return to receive your refund.",
             }
 
         return {
-            "eligible": False,
+            "found": True,
             "order_id": order_id,
+            "eligible": False,
             "reason": f"Order was delivered {days_since_order} day(s) ago, "
                       f"which is past the {REFUND_WINDOW_DAYS}-day refund window.",
+            "next_step": "Contact support if there are special circumstances (e.g. a damaged item).",
+        }
+
+    if status == "shipped":
+        return {
+            "found": True,
+            "order_id": order_id,
+            "eligible": False,
+            "reason": "Order has shipped but hasn't been delivered yet, so it isn't refund-eligible yet.",
+            "next_step": "Please wait until the order is delivered, then request a refund if needed.",
+        }
+
+    if status == "processing":
+        return {
+            "found": True,
+            "order_id": order_id,
+            "eligible": False,
+            "reason": "Order is still processing and hasn't shipped, so there's nothing to refund yet.",
+            "next_step": "The order may still be cancelable — contact support to cancel it before it ships.",
+        }
+
+    if status == "delayed":
+        return {
+            "found": True,
+            "order_id": order_id,
+            "eligible": False,
+            "reason": "Order is delayed and hasn't been delivered yet, so it isn't refund-eligible yet.",
+            "next_step": "Please wait for delivery, or contact support if it's significantly overdue.",
         }
 
     return {
-        "eligible": False,
+        "found": True,
         "order_id": order_id,
-        "reason": f"Order status is '{status}'; refunds can be requested once "
-                  f"the order has been delivered or cancelled.",
+        "eligible": False,
+        "reason": f"Order status is '{status}'; refund eligibility could not be determined automatically.",
+        "next_step": "Please contact support for help with this order.",
     }

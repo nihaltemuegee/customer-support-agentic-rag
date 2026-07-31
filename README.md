@@ -1,4 +1,4 @@
-# Customer Support Agentic RAG (Version 2)
+# Customer Support Agentic RAG (Version 3)
 
 A beginner-friendly demo of an **agentic workflow** for fictional e-commerce customer
 support, built with [LangGraph](https://github.com/langchain-ai/langgraph) and simple
@@ -46,9 +46,12 @@ Final answer + structured trace (intent, tool_result, evidence, escalation flag)
 `shipping_question`, `warranty_question`, `complaint_escalation`, `general_faq`, `unknown`.
 
 **Tools** (`src/tools/`):
-- `lookup_order_status(order_id)` — reads `data/orders/orders.csv`
-- `check_refund_eligibility(order_id)` — simple 30-day refund rule
+- `lookup_order_status(order_id)` — reads `data/orders/orders.csv`, returns order details
+- `check_refund_eligibility(order_id, damaged=False)` — status-based refund rules, plus a
+  damaged-item override
 - `create_support_ticket(summary, priority)` — creates an in-memory ticket dict
+
+See the "Version 3: Order & Refund Tool Routing" section below for how these are used.
 
 **Retrieval** (`src/rag/retriever.py`): splits the FAQ markdown files in `data/faq/`
 into sections and returns the sections that share the most keywords with the question.
@@ -170,14 +173,74 @@ tool result (`check_refund_eligibility`) remains the primary source of truth for
 answer text, since it's order-specific, but the FAQ evidence is still attached to the
 response for extra context.
 
+## Version 3: Order & Refund Tool Routing
+
+Version 3 makes the two order-specific tools -- `lookup_order_status` and
+`check_refund_eligibility` -- more capable, and makes `route_request` orchestrate them
+more deliberately instead of just calling them blindly.
+
+**Why this demonstrates agentic tool use.** The graph doesn't just answer from an LLM's
+own knowledge -- it decides *which* tool to call based on intent, calls it with
+*structured* arguments (an order id, a `damaged` flag), reads the *structured result*
+back, and sometimes chains a second tool off the first one's outcome. That
+decide → call → read result → maybe call another tool loop is the core of what makes a
+workflow "agentic" rather than a single prompt-response call, and it's easy to point at
+in an interview: "here's the node that decides which tool to call, here's the tool
+signature, here's where I chain a second tool."
+
+**Order id extraction** (`extract_order_id` in `src/graph/nodes.py`) is a small, pure,
+testable function pulled out of `receive_question`. It matches `ORD-\d+` case-insensitively
+anywhere in the sentence, so `"ORD-1001"`, `"ord-1001"`, `"Order ORD-1001"`, and
+`"my order is ORD-1001"` all resolve to the same normalized id.
+
+**`lookup_order_status(order_id)`** (`src/tools/order_tools.py`) reads
+`data/orders/orders.csv` and returns a structured dict: `order_id`, `customer_name`,
+`status`, `product`, `carrier`, `estimated_delivery`, `total_amount`, and `found`. Lookups
+are case-insensitive. If the id isn't found, `found` is `false` and the other fields are
+`null` -- the tool never guesses.
+
+**`check_refund_eligibility(order_id, damaged=False)`** (`src/tools/refund_tools.py`)
+applies simple demo rules based on the order's status:
+- `delivered` -> eligible if within the 30-day refund window
+- `shipped` -> not yet eligible; must wait for delivery
+- `processing` -> not eligible for a refund yet, but may still be cancelable
+- `cancelled` -> eligible for a full refund
+- `damaged=True` -> always eligible for a refund/replacement, and the `next_step`
+  recommends contacting support, regardless of the order's normal status
+
+Every result includes a human-readable `reason` and a `next_step`, so
+`generate_response` can build a clear answer without re-deriving the logic.
+
+**Tool routing** (`route_request` in `src/graph/nodes.py`):
+- `order_status` -> `lookup_order_status(order_id)`.
+- `refund_request` -> `check_refund_eligibility(order_id, damaged=...)`, grounded with
+  refund/return FAQ evidence. If the question describes a damaged item, `route_request`
+  also calls `create_support_ticket(...)` and attaches the ticket to `tool_result` --
+  two tools chained off one intent.
+- If `order_status` or `refund_request` is detected but no order id is present,
+  **no order id is invented**. No tool is called; `tool_result["found"]` is `false`, and
+  `final_answer` asks the customer for their order id instead.
+
+**Damaged package handling.** Questions like *"My order ORD-1005 arrived damaged"* or
+*"My package was broken"* are detected by a small `DAMAGE_KEYWORDS` list and classified
+as `refund_request` (not `warranty_question`), since a damaged-on-arrival item is a
+refund/replacement case. If the wording is also angry, urgent, or asks for a human (e.g.
+*"...and I'm furious, get me a human!"*), the existing escalation keywords still win --
+`classify_intent_text` checks escalation wording first -- so severe cases become
+`complaint_escalation` with `needs_escalation = true`, while still attaching refund/return
+FAQ evidence for context.
+
 ## Version Roadmap
 
 - **v1** — Rule-based intent classification, linear LangGraph workflow, in-memory tools,
   FastAPI endpoint.
-- **v2 (current)** — Chunked, stopword-filtered FAQ retrieval; structured
+- **v2** — Chunked, stopword-filtered FAQ retrieval; structured
   `{source, text}` evidence; FAQ-grounded answers wired into `generate_response`.
-- **v3** — Swap rule-based classification for an LLM-based classifier; add conditional
+- **v3 (current)** — Richer order-status/refund-eligibility tools; deliberate tool
+  routing (including chaining a support ticket off a damaged-item refund request);
+  order id extraction handles more phrasings; no order id is ever guessed.
+- **v4** — Swap rule-based classification for an LLM-based classifier; add conditional
   routing/branches in the graph based on tool results.
-- **v4** — Add real vector-based retrieval (e.g. Chroma) and embeddings for the FAQ data.
-- **v5** — Persistent storage for orders/tickets (a real database instead of CSV/JSON),
+- **v5** — Add real vector-based retrieval (e.g. Chroma) and embeddings for the FAQ data.
+- **v6** — Persistent storage for orders/tickets (a real database instead of CSV/JSON),
   and a simple front-end (e.g. Streamlit) for demoing the assistant.

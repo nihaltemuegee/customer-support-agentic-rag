@@ -32,23 +32,33 @@ def lookup_order_status(order_id: str) -> dict[str, Any]:
     Look up the current status of an order by its order_id.
 
     Returns a structured dict describing whether the order was found
-    and, if so, its shipping status and details.
+    and, if so, its shipping status and details. Lookups are
+    case-insensitive (e.g. "ord-1001" matches "ORD-1001").
     """
     orders = _load_orders()
-    order = orders.get(order_id)
+    normalized_id = order_id.upper() if order_id else order_id
+    order = orders.get(normalized_id)
 
     if order is None:
         return {
             "found": False,
             "order_id": order_id,
+            "customer_name": None,
+            "status": None,
+            "product": None,
+            "carrier": None,
+            "estimated_delivery": None,
+            "total_amount": None,
             "message": f"No order found with id '{order_id}'.",
         }
 
     return {
         "found": True,
         "order_id": order["order_id"],
+        "customer_name": order["customer_name"],
         "status": order["status"],
         "product": order["product"],
         "carrier": order["carrier"] or None,
         "estimated_delivery": order["estimated_delivery"] or None,
+        "total_amount": float(order["amount"]),
     }

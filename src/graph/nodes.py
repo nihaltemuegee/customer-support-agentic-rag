@@ -20,7 +20,12 @@ ORDER_ID_PATTERN = re.compile(r"ORD-\d+", re.IGNORECASE)
 ESCALATION_KEYWORDS = [
     "frustrated", "furious", "angry", "unacceptable", "terrible",
     "worst", "manager", "supervisor", "escalate", "complaint", "ridiculous",
+    "urgent", "immediately", "asap", "human", "representative", "real person",
 ]
+# Damage/defect-on-arrival wording. Checked alongside REFUND_KEYWORDS, since a
+# damaged item is a refund/replacement case first -- unless ESCALATION_KEYWORDS
+# also matched above, in which case complaint_escalation already won.
+DAMAGE_KEYWORDS = ["damaged", "broken", "smashed", "shattered", "arrived damaged"]
 REFUND_KEYWORDS = ["refund", "money back", "reimburse"]
 ORDER_STATUS_KEYWORDS = ["where is my order", "track", "tracking", "order status", "status of"]
 RETURN_KEYWORDS = ["return policy", "can i return", "how do i return", "returning"]
@@ -29,7 +34,7 @@ SHIPPING_KEYWORDS = [
     "international", "internationally",
     "tracking", "carrier", "package", "parcel",
 ]
-WARRANTY_KEYWORDS = ["warranty", "defect", "broken", "malfunction"]
+WARRANTY_KEYWORDS = ["warranty", "defect", "malfunction"]
 GENERAL_FAQ_KEYWORDS = ["account", "password", "email", "login", "sign up", "log in"]
 
 # Intents that are grounded with FAQ evidence via src/rag/retriever.py.
@@ -43,6 +48,23 @@ FAQ_RETRIEVAL_INTENTS = {
 }
 
 
+def extract_order_id(question: str) -> str | None:
+    """
+    Extract an order id like ORD-1001 from free text.
+
+    Case-insensitive and works anywhere in the sentence, so it handles
+    "ORD-1001", "ord-1001", "Order ORD-1001", and "my order is ORD-1001".
+    """
+    match = ORDER_ID_PATTERN.search(question)
+    return match.group(0).upper() if match else None
+
+
+def is_damage_question(question: str) -> bool:
+    """Whether the question mentions a damaged/broken item on arrival."""
+    text = question.lower()
+    return any(keyword in text for keyword in DAMAGE_KEYWORDS)
+
+
 def classify_intent_text(question: str, order_id: str | None) -> str:
     """
     Pure rule-based intent classifier so it's easy to unit test on its
@@ -53,7 +75,7 @@ def classify_intent_text(question: str, order_id: str | None) -> str:
     if any(keyword in text for keyword in ESCALATION_KEYWORDS):
         return "complaint_escalation"
 
-    if any(keyword in text for keyword in REFUND_KEYWORDS):
+    if any(keyword in text for keyword in REFUND_KEYWORDS) or is_damage_question(question):
         return "refund_request"
 
     if any(keyword in text for keyword in ORDER_STATUS_KEYWORDS) or (
@@ -79,9 +101,7 @@ def classify_intent_text(question: str, order_id: str | None) -> str:
 def receive_question(state: SupportState) -> dict:
     """Normalize the incoming question and extract an order id, if present."""
     question = state["question"].strip()
-
-    match = ORDER_ID_PATTERN.search(question)
-    order_id = match.group(0).upper() if match else None
+    order_id = extract_order_id(question)
 
     return {
         "question": question,
@@ -103,14 +123,22 @@ def route_request(state: SupportState) -> dict:
     Based on the classified intent, call the relevant tool and/or
     fetch supporting evidence from the FAQ retriever.
 
-    - order_status / complaint_escalation: answered from a tool call.
-    - shipping_question / return_policy / refund_request / warranty_question /
-      general_faq: grounded with FAQ evidence (see FAQ_RETRIEVAL_INTENTS above).
+    - order_status: answered from lookup_order_status(order_id).
+    - refund_request: answered from check_refund_eligibility(order_id), grounded
+      with refund/return FAQ evidence. If the question describes a damaged item,
+      a support ticket is also created so a human can follow up.
+    - complaint_escalation: answered by creating a support ticket; also grounded
+      with FAQ evidence if the complaint mentions a damaged item.
+    - return_policy / shipping_question / warranty_question / general_faq:
+      grounded with FAQ evidence (see FAQ_RETRIEVAL_INTENTS above).
     - unknown: no tool call, no evidence.
+    - Missing order id (order_status / refund_request): no tool is called and no
+      order id is guessed -- the customer is asked to provide one instead.
     """
     intent = state["intent"]
     question = state["question"]
     order_id = state.get("order_id")
+    damaged = is_damage_question(question)
 
     tool_result = None
     evidence: list[dict[str, str]] = []
@@ -120,19 +148,37 @@ def route_request(state: SupportState) -> dict:
         if order_id:
             tool_result = lookup_order_status(order_id)
         else:
-            tool_result = {"found": False, "message": "No order id was provided."}
+            tool_result = {
+                "found": False,
+                "order_id": None,
+                "message": "No order id was provided.",
+            }
 
     elif intent == "refund_request":
         if order_id:
-            tool_result = check_refund_eligibility(order_id)
+            tool_result = check_refund_eligibility(order_id, damaged=damaged)
+            if damaged:
+                # Chain a second tool: open a ticket so a human can follow up
+                # on the damaged item, in addition to the refund decision.
+                ticket = create_support_ticket(
+                    summary=f"Damaged item reported for order {order_id}: {question}",
+                    priority="high",
+                )
+                tool_result["ticket"] = ticket
         else:
-            tool_result = {"eligible": False, "reason": "No order id was provided."}
+            tool_result = {
+                "found": False,
+                "order_id": None,
+                "eligible": False,
+                "reason": "No order id was provided.",
+                "next_step": "Please share your order id so we can check refund eligibility.",
+            }
 
     elif intent == "complaint_escalation":
         tool_result = create_support_ticket(summary=question, priority="high")
         needs_escalation = True
 
-    if intent in FAQ_RETRIEVAL_INTENTS:
+    if intent in FAQ_RETRIEVAL_INTENTS or (intent == "complaint_escalation" and damaged):
         evidence = retrieve(question)
 
     return {
@@ -164,9 +210,18 @@ def generate_response(state: SupportState) -> dict:
 
     elif intent == "refund_request":
         if tool_result and order_id:
-            answer = tool_result.get("reason", "I couldn't determine refund eligibility.")
+            reason = tool_result.get("reason", "I couldn't determine refund eligibility.")
+            next_step = tool_result.get("next_step")
+            answer = f"{reason} {next_step}" if next_step else reason
+
+            ticket = tool_result.get("ticket")
+            if ticket:
+                answer += (
+                    f" I've also opened support ticket {ticket['ticket_id']} "
+                    "so our team can follow up on the damaged item."
+                )
         else:
-            answer = "Please provide your order id so I can check refund eligibility."
+            answer = "Please provide your order id (e.g. ORD-1001) so I can check refund eligibility."
 
     elif intent == "complaint_escalation":
         ticket_id = tool_result.get("ticket_id") if tool_result else "N/A"
