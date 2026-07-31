@@ -24,4 +24,4 @@ APP_NAME = os.getenv("APP_NAME", "customer-support-agentic-rag")
 DEBUG = os.getenv("DEBUG", "true").lower() == "true"
 
 # Default priority used when a support ticket doesn't specify one
-DEFAULT_TICKET_PRIORITY = "normal"
+DEFAULT_TICKET_PRIORITY = "low"

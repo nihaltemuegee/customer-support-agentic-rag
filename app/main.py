@@ -32,6 +32,7 @@ class AskResponse(BaseModel):
     order_id: Optional[str] = None
     needs_escalation: bool
     tool_result: Optional[dict[str, Any]] = None
+    escalation_result: Optional[dict[str, Any]] = None
     evidence: list[EvidenceItem]
     final_answer: str
 
@@ -51,6 +52,7 @@ def ask(request: AskRequest) -> AskResponse:
         order_id=result.get("order_id"),
         needs_escalation=result.get("needs_escalation", False),
         tool_result=result.get("tool_result"),
+        escalation_result=result.get("escalation_result"),
         evidence=result.get("evidence", []),
         final_answer=result["final_answer"],
     )

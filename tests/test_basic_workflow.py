@@ -10,6 +10,7 @@ from src.graph.nodes import classify_intent_text
 from src.rag.retriever import retrieve
 from src.tools.order_tools import lookup_order_status
 from src.tools.refund_tools import check_refund_eligibility
+from src.tools.ticket_tools import create_support_ticket
 
 client = TestClient(app)
 
@@ -137,10 +138,12 @@ def test_refund_request_without_order_id():
 def test_damaged_package_question():
     result = run_support_workflow("My order ORD-1005 arrived damaged. What should I do?")
     assert result["intent"] == "refund_request"
-    assert result["needs_escalation"] is False
     assert result["tool_result"]["eligible"] is True
-    assert "ticket" in result["tool_result"]
     assert len(result["evidence"]) > 0
+    # Version 4: damage reports escalate to a human at high priority.
+    assert result["needs_escalation"] is True
+    assert result["escalation_result"] is not None
+    assert result["escalation_result"]["priority"] == "high"
 
 
 def test_order_status_api_response_includes_tool_result():
@@ -151,3 +154,42 @@ def test_order_status_api_response_includes_tool_result():
     assert data["tool_result"] is not None
     assert data["tool_result"]["found"] is True
     assert data["tool_result"]["order_id"] == "ORD-1001"
+
+
+# --- Version 4: escalation & ticket creation tests --------------------------
+
+
+def test_create_support_ticket_returns_expected_shape():
+    ticket = create_support_ticket("Test issue", priority="high")
+    assert ticket["created"] is True
+    assert ticket["status"] == "open"
+    assert ticket["priority"] == "high"
+    assert ticket["ticket_id"].startswith("TICKET-")
+    assert "next_step" in ticket
+
+
+def test_angry_customer_creates_high_priority_ticket():
+    result = run_support_workflow("I am so angry, this service has been terrible!")
+    assert result["needs_escalation"] is True
+    assert result["escalation_result"] is not None
+    assert result["escalation_result"]["priority"] == "high"
+
+
+def test_general_human_request_creates_low_priority_ticket():
+    result = run_support_workflow("Can I talk to a human, please?")
+    assert result["needs_escalation"] is True
+    assert result["escalation_result"] is not None
+    assert result["escalation_result"]["priority"] == "low"
+
+
+def test_normal_faq_question_does_not_create_ticket():
+    result = run_support_workflow("What is your return policy?")
+    assert result["needs_escalation"] is False
+    assert result["escalation_result"] is None
+
+
+def test_final_answer_includes_ticket_id_when_escalation_happens():
+    result = run_support_workflow("I am furious and want to speak to a manager right now!")
+    assert result["escalation_result"] is not None
+    ticket_id = result["escalation_result"]["ticket_id"]
+    assert ticket_id in result["final_answer"]

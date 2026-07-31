@@ -21,11 +21,14 @@ class SupportState(TypedDict, total=False):
     # Evidence gathered from the FAQ retriever: [{"source": "shipping.md", "text": "..."}, ...]
     evidence: list[dict[str, str]]
 
-    # Structured result returned by a tool call (order lookup, refund check, ticket creation)
+    # Structured result returned by a topic tool call (order lookup, refund check)
     tool_result: Optional[dict[str, Any]]
 
     # Whether this request should be escalated to a human agent
     needs_escalation: bool
+
+    # Support ticket created by create_support_ticket(), set only when needs_escalation is True
+    escalation_result: Optional[dict[str, Any]]
 
     # The final answer text shown to the customer
     final_answer: str
