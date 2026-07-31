@@ -1,0 +1,86 @@
+[
+  {
+    "id": 1,
+    "question": "Where is my order ORD-1001?",
+    "expected_intent": "order_status",
+    "order_id": "ORD-1001"
+  },
+  {
+    "id": 2,
+    "question": "Can you check the status of ORD-1005? It says delayed.",
+    "expected_intent": "order_status",
+    "order_id": "ORD-1005"
+  },
+  {
+    "id": 3,
+    "question": "I want a refund for my Bluetooth Speaker, order ORD-1003.",
+    "expected_intent": "refund_request",
+    "order_id": "ORD-1003"
+  },
+  {
+    "id": 4,
+    "question": "How do I get my money back for a cancelled order?",
+    "expected_intent": "refund_request",
+    "order_id": null
+  },
+  {
+    "id": 5,
+    "question": "What is your return policy for unopened items?",
+    "expected_intent": "return_policy",
+    "order_id": null
+  },
+  {
+    "id": 6,
+    "question": "Can I return my Smart Watch if I don't like it?",
+    "expected_intent": "return_policy",
+    "order_id": "ORD-1002"
+  },
+  {
+    "id": 7,
+    "question": "How long does shipping usually take?",
+    "expected_intent": "shipping_question",
+    "order_id": null
+  },
+  {
+    "id": 8,
+    "question": "Do you offer express shipping and how much does it cost?",
+    "expected_intent": "shipping_question",
+    "order_id": null
+  },
+  {
+    "id": 9,
+    "question": "Is my Mechanical Keyboard covered under warranty if it stops working?",
+    "expected_intent": "warranty_question",
+    "order_id": "ORD-1006"
+  },
+  {
+    "id": 10,
+    "question": "What does the warranty cover exactly?",
+    "expected_intent": "warranty_question",
+    "order_id": null
+  },
+  {
+    "id": 11,
+    "question": "This is the third time I'm contacting you and no one has helped me, I'm extremely frustrated and want to speak to a manager now!",
+    "expected_intent": "complaint_escalation",
+    "order_id": null
+  },
+  {
+    "id": 12,
+    "question": "I am furious, this is unacceptable service and I demand a supervisor.",
+    "expected_intent": "complaint_escalation",
+    "order_id": null
+  },
+  {
+    "id": 13,
+    "question": "How do I update my email address on my account?",
+    "expected_intent": "general_faq",
+    "order_id": null
+  },
+  {
+    "id": 14,
+    "question": "What's the best pizza topping?",
+    "expected_intent": "unknown",
+    "order_id": null
+  }
+]

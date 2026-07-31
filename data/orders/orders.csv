@@ -1,0 +1,11 @@
+order_id,customer_name,product,order_date,status,carrier,estimated_delivery,amount
+ORD-1001,Alice Johnson,Wireless Headphones,2026-07-10,delivered,FastShip,2026-07-14,79.99
+ORD-1002,Brian Smith,Smart Watch,2026-07-15,shipped,FastShip,2026-07-20,199.99
+ORD-1003,Carla Diaz,Bluetooth Speaker,2026-07-18,processing,,2026-07-25,49.99
+ORD-1004,David Lee,Laptop Stand,2026-07-12,delivered,QuickCourier,2026-07-16,34.50
+ORD-1005,Emma Wilson,USB-C Hub,2026-07-20,delayed,FastShip,2026-07-24,29.99
+ORD-1006,Frank Miller,Mechanical Keyboard,2026-07-05,delivered,QuickCourier,2026-07-09,89.99
+ORD-1007,Grace Kim,Webcam,2026-07-22,shipped,FastShip,2026-07-27,59.99
+ORD-1008,Henry Brown,Phone Case,2026-07-25,processing,,2026-07-30,14.99
+ORD-1009,Isabella Clark,Noise Cancelling Earbuds,2026-07-01,cancelled,,,99.99
+ORD-1010,Jack Turner,Portable Charger,2026-07-28,shipped,QuickCourier,2026-08-02,24.99
