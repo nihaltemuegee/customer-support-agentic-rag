@@ -21,8 +21,21 @@ class FaqSection:
     text: str         # section body text
 
 
+# Common words filtered out of scoring so they don't create false matches
+# (e.g. "is" and "my" showing up in almost every FAQ section).
+STOPWORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "am",
+    "i", "you", "your", "my", "me", "it", "this", "that", "these", "those",
+    "do", "does", "did", "have", "has", "had", "can", "could", "will", "would",
+    "and", "or", "but", "if", "so", "not", "no",
+    "in", "on", "of", "to", "for", "with", "under", "from", "by", "as", "at",
+    "how", "what", "when", "where", "why", "who", "which",
+}
+
+
 def _tokenize(text: str) -> set[str]:
-    return set(re.findall(r"[a-z0-9]+", text.lower()))
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    return {word for word in words if word not in STOPWORDS}
 
 
 def load_faq_sections() -> list[FaqSection]:
@@ -47,11 +60,14 @@ def load_faq_sections() -> list[FaqSection]:
     return sections
 
 
-def retrieve(query: str, top_k: int = 3) -> list[str]:
+def retrieve(query: str, top_k: int = 3) -> list[dict[str, str]]:
     """
-    Return up to `top_k` FAQ snippets most relevant to `query`, using
+    Return up to `top_k` FAQ chunks most relevant to `query`, using
     simple word-overlap scoring between the query and each section's
     heading + body.
+
+    Each chunk is returned as a dict: {"source": "<filename>", "text": "<chunk text>"},
+    matching the evidence shape returned by the /ask API.
     """
     query_words = _tokenize(query)
     if not query_words:
@@ -68,6 +84,9 @@ def retrieve(query: str, top_k: int = 3) -> list[str]:
 
     evidence = []
     for _, section in scored[:top_k]:
-        evidence.append(f"[{section.source}] {section.heading}: {section.text}")
+        evidence.append({
+            "source": section.source,
+            "text": f"{section.heading}: {section.text}",
+        })
 
     return evidence

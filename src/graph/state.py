@@ -18,8 +18,8 @@ class SupportState(TypedDict, total=False):
     # Order id extracted from the question, if any (e.g. "ORD-1001")
     order_id: Optional[str]
 
-    # Evidence gathered from the FAQ retriever (list of text snippets)
-    evidence: list[str]
+    # Evidence gathered from the FAQ retriever: [{"source": "shipping.md", "text": "..."}, ...]
+    evidence: list[dict[str, str]]
 
     # Structured result returned by a tool call (order lookup, refund check, ticket creation)
     tool_result: Optional[dict[str, Any]]

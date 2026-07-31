@@ -21,13 +21,18 @@ class AskRequest(BaseModel):
     question: str
 
 
+class EvidenceItem(BaseModel):
+    source: str
+    text: str
+
+
 class AskResponse(BaseModel):
     question: str
     intent: str
     order_id: Optional[str] = None
     needs_escalation: bool
     tool_result: Optional[dict[str, Any]] = None
-    evidence: list[str]
+    evidence: list[EvidenceItem]
     final_answer: str
 
 

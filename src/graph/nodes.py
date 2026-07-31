@@ -24,9 +24,23 @@ ESCALATION_KEYWORDS = [
 REFUND_KEYWORDS = ["refund", "money back", "reimburse"]
 ORDER_STATUS_KEYWORDS = ["where is my order", "track", "tracking", "order status", "status of"]
 RETURN_KEYWORDS = ["return policy", "can i return", "how do i return", "returning"]
-SHIPPING_KEYWORDS = ["shipping", "deliver", "delivery"]
+SHIPPING_KEYWORDS = [
+    "ship", "shipping", "deliver", "delivery",
+    "international", "internationally",
+    "tracking", "carrier", "package", "parcel",
+]
 WARRANTY_KEYWORDS = ["warranty", "defect", "broken", "malfunction"]
 GENERAL_FAQ_KEYWORDS = ["account", "password", "email", "login", "sign up", "log in"]
+
+# Intents that are grounded with FAQ evidence via src/rag/retriever.py.
+# order_status and complaint_escalation are answered from tool results instead.
+FAQ_RETRIEVAL_INTENTS = {
+    "shipping_question",
+    "return_policy",
+    "refund_request",
+    "warranty_question",
+    "general_faq",
+}
 
 
 def classify_intent_text(question: str, order_id: str | None) -> str:
@@ -88,13 +102,18 @@ def route_request(state: SupportState) -> dict:
     """
     Based on the classified intent, call the relevant tool and/or
     fetch supporting evidence from the FAQ retriever.
+
+    - order_status / complaint_escalation: answered from a tool call.
+    - shipping_question / return_policy / refund_request / warranty_question /
+      general_faq: grounded with FAQ evidence (see FAQ_RETRIEVAL_INTENTS above).
+    - unknown: no tool call, no evidence.
     """
     intent = state["intent"]
     question = state["question"]
     order_id = state.get("order_id")
 
     tool_result = None
-    evidence: list[str] = []
+    evidence: list[dict[str, str]] = []
     needs_escalation = False
 
     if intent == "order_status":
@@ -102,32 +121,19 @@ def route_request(state: SupportState) -> dict:
             tool_result = lookup_order_status(order_id)
         else:
             tool_result = {"found": False, "message": "No order id was provided."}
-        evidence = retrieve("order status shipping tracking")
 
     elif intent == "refund_request":
         if order_id:
             tool_result = check_refund_eligibility(order_id)
         else:
             tool_result = {"eligible": False, "reason": "No order id was provided."}
-        evidence = retrieve("refund eligibility " + question)
-
-    elif intent == "return_policy":
-        evidence = retrieve("return policy " + question)
-
-    elif intent == "shipping_question":
-        evidence = retrieve("shipping " + question)
-
-    elif intent == "warranty_question":
-        evidence = retrieve("warranty " + question)
-
-    elif intent == "general_faq":
-        evidence = retrieve(question)
 
     elif intent == "complaint_escalation":
         tool_result = create_support_ticket(summary=question, priority="high")
         needs_escalation = True
 
-    # "unknown" intent: no tool call, no evidence, no escalation
+    if intent in FAQ_RETRIEVAL_INTENTS:
+        evidence = retrieve(question)
 
     return {
         "tool_result": tool_result,
@@ -171,7 +177,10 @@ def generate_response(state: SupportState) -> dict:
 
     elif intent in ("return_policy", "shipping_question", "warranty_question", "general_faq"):
         if evidence:
-            answer = evidence[0].split(": ", 1)[-1]
+            # Ground the answer in the top-scoring FAQ chunk. Each chunk's
+            # "text" is "<heading>: <body>", so we surface just the body.
+            _, _, body = evidence[0]["text"].partition(": ")
+            answer = body or evidence[0]["text"]
         else:
             answer = "I don't have a specific answer for that yet, but our support team can help."
 
