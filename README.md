@@ -1,4 +1,4 @@
-# Customer Support Agentic RAG (Version 4)
+# Customer Support Agentic RAG (Version 5)
 
 A beginner-friendly demo of an **agentic workflow** for fictional e-commerce customer
 support, built with [LangGraph](https://github.com/langchain-ai/langgraph) and simple
@@ -71,6 +71,13 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
+To also run the Streamlit UI (see "Version 5: Streamlit UI" below), install its extra
+dependency:
+
+```bash
+pip install -r requirements-ui.txt
+```
+
 ## Running the API
 
 ```bash
@@ -117,6 +124,20 @@ curl -X POST http://127.0.0.1:8000/ask \
   "final_answer": "Most items can be returned within 30 days of delivery, as long as they are unused and in their original packaging."
 }
 ```
+
+## Running the Streamlit UI
+
+The Streamlit app is a thin UI on top of the same LangGraph workflow the API uses --
+see "Version 5: Streamlit UI" below for how it avoids duplicating any agent logic.
+
+```bash
+streamlit run ui/streamlit_app.py
+```
+
+This opens at `http://localhost:8501`. The FastAPI server does **not** need to be
+running for the UI to work, since the UI imports and calls the graph function directly;
+it only falls back to calling `http://127.0.0.1:8000/ask` over HTTP if that direct
+import isn't available.
 
 ## Example Questions
 
@@ -308,6 +329,44 @@ curl -X POST http://127.0.0.1:8000/ask \
 }
 ```
 
+## Version 5: Streamlit UI
+
+Version 5 adds a UI (`ui/streamlit_app.py`) purely as a presentation layer -- it does
+not reimplement any part of the agent workflow.
+
+**No duplicated logic.** The UI imports and calls `run_support_workflow()` from
+`src/graph/graph.py` directly -- the exact same function `app/main.py`'s `/ask`
+endpoint calls. Since Streamlit only puts the script's own folder on `sys.path` by
+default, the app adds the project root to `sys.path` at the top of the file so
+`from src...` imports resolve. If that import ever fails (e.g. the UI is deployed
+separately from the backend code), it falls back to calling the FastAPI `/ask`
+endpoint over HTTP with `requests` instead -- so the UI works either as a thin client
+on top of the same process, or as a standalone client hitting a remote API, without two
+copies of the graph logic to keep in sync.
+
+**Layout:**
+- **Sidebar** -- a short project description ("Customer Support Agentic RAG assistant
+  using LangGraph, local FAQ retrieval, tool routing, and escalation logic.") and six
+  example-question buttons that fill in the input and run the workflow immediately:
+  - "Where is my order ORD-1001?"
+  - "Can I get a refund for ORD-1003?"
+  - "Do you ship internationally?"
+  - "My order ORD-1005 arrived damaged. What should I do?"
+  - "I am very angry and want to speak to a human."
+  - "What is your warranty policy?"
+- **Main panel** -- a text box and "Ask" button, then the result: the final answer, an
+  escalation warning banner when `needs_escalation` is true, `intent` and `order_id` as
+  metrics, `tool_result` and `escalation_result` as formatted JSON (with a plain-language
+  fallback when either is empty), the FAQ `evidence` (source filename + text), and the
+  complete raw JSON response inside a collapsed expander for inspecting the full state.
+
+**Why this is still "agentic," not just a chat box.** The UI never talks to an LLM and
+never decides anything itself -- every decision (intent, which tool to call, whether to
+escalate) still happens inside the graph. The UI's only job is to call
+`run_support_workflow()` once and render the structured result, which is exactly the
+separation of concerns you'd want in a real product: the agent logic is UI-agnostic and
+already has both a REST API and a UI in front of it, unchanged.
+
 ## Version Roadmap
 
 - **v1** — Rule-based intent classification, linear LangGraph workflow, in-memory tools,
@@ -316,11 +375,13 @@ curl -X POST http://127.0.0.1:8000/ask \
   `{source, text}` evidence; FAQ-grounded answers wired into `generate_response`.
 - **v3** — Richer order-status/refund-eligibility tools; deliberate tool routing; order
   id extraction handles more phrasings; no order id is ever guessed.
-- **v4 (current)** — Escalation decided independently of intent, with a `high`/`medium`/
+- **v4** — Escalation decided independently of intent, with a `high`/`medium`/
   `low` priority model; ticket results live in their own `escalation_result` field;
   `final_answer` always mentions the ticket id when escalation happens.
-- **v5** — Swap rule-based classification for an LLM-based classifier; add conditional
+- **v5 (current)** — Streamlit UI (`ui/streamlit_app.py`) as a thin layer over the same
+  `run_support_workflow()` function the API uses, with an HTTP fallback; FastAPI is
+  unchanged and still runs standalone.
+- **v6** — Swap rule-based classification for an LLM-based classifier; add conditional
   routing/branches in the graph based on tool results.
-- **v6** — Add real vector-based retrieval (e.g. Chroma) and embeddings for the FAQ data.
-- **v7** — Persistent storage for orders/tickets (a real database instead of CSV/JSON),
-  and a simple front-end (e.g. Streamlit) for demoing the assistant.
+- **v7** — Add real vector-based retrieval (e.g. Chroma) and embeddings for the FAQ data.
+- **v8** — Persistent storage for orders/tickets (a real database instead of CSV/JSON).
