@@ -43,8 +43,14 @@ EXAMPLE_QUESTIONS = [
     "What is your warranty policy?",
 ]
 
+# Intents where a missing order id means the conversation should continue once
+# the customer supplies one. Mirrors FOLLOW_UP_INTENTS in src/graph/nodes.py --
+# kept as a small local constant so the UI works even in API-fallback mode,
+# without importing internal graph modules.
+FOLLOW_UP_INTENTS = {"order_status", "refund_request"}
 
-def ask_backend(question: str) -> dict:
+
+def ask_backend(question: str, previous_intent: str | None = None) -> dict:
     """
     Run a question through the agent workflow.
 
@@ -52,20 +58,49 @@ def ask_backend(question: str) -> dict:
     FastAPI app uses) so the UI never reimplements the graph. Falls back
     to calling the FastAPI /ask endpoint over HTTP if the direct import
     isn't available (e.g. the UI is deployed separately from the backend).
+
+    previous_intent carries basic multi-turn context (see Version 6): when
+    set, a bare follow-up like "ORD-1003" continues that prior request
+    instead of being reclassified from scratch.
     """
     if _DIRECT_IMPORT_OK:
-        return run_support_workflow(question)
+        return run_support_workflow(question, previous_intent=previous_intent)
 
-    response = requests.post(API_URL, json={"question": question}, timeout=10)
+    payload = {"question": question}
+    if previous_intent:
+        payload["previous_intent"] = previous_intent
+    response = requests.post(API_URL, json=payload, timeout=10)
     response.raise_for_status()
     return response.json()
 
 
 def run_question(question: str) -> None:
-    """Call the backend and store the result (or error) in session state."""
+    """
+    Call the backend and store the result (or error) in session state.
+
+    Basic multi-turn support: if the previous turn asked for an order id
+    (st.session_state.pending_intent is set), it's passed along automatically
+    so a bare follow-up like "ORD-1003" continues that same request. After
+    each call, pending_intent is recomputed from the fresh result -- it's
+    only kept set while the conversation is still waiting on an order id.
+    """
+    previous_intent = st.session_state.get("pending_intent")
+
     try:
-        st.session_state.result = ask_backend(question)
+        result = ask_backend(question, previous_intent=previous_intent)
+        st.session_state.result = result
         st.session_state.error = None
+
+        tool_result = result.get("tool_result") or {}
+        awaiting_order_id = (
+            result.get("intent") in FOLLOW_UP_INTENTS
+            and not result.get("order_id")
+            and tool_result.get("found") is False
+        )
+        st.session_state.pending_intent = result.get("intent") if awaiting_order_id else None
+
+        continued = previous_intent and result.get("intent") == previous_intent and result.get("order_id")
+        st.session_state.continued_from = previous_intent if continued else None
     except Exception as exc:  # noqa: BLE001 -- surface any backend error to the UI
         st.session_state.result = None
         st.session_state.error = str(exc)
@@ -79,6 +114,10 @@ if "result" not in st.session_state:
     st.session_state.result = None
 if "error" not in st.session_state:
     st.session_state.error = None
+if "pending_intent" not in st.session_state:
+    st.session_state.pending_intent = None
+if "continued_from" not in st.session_state:
+    st.session_state.continued_from = None
 
 with st.sidebar:
     st.header("About this demo")
@@ -114,6 +153,13 @@ if st.session_state.error:
 result = st.session_state.result
 
 if result:
+    if st.session_state.continued_from:
+        topic = st.session_state.continued_from.replace("_", " ")
+        st.info(
+            f"Continuing your previous {topic} request using order id "
+            f"{result.get('order_id')}."
+        )
+
     st.subheader("Answer")
     st.write(result.get("final_answer", ""))
 

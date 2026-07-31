@@ -18,6 +18,42 @@ Demonstrate the basics of an agentic customer support assistant:
 All data (orders, tickets, FAQs) is synthetic and fictional. This project does not use
 real customer data or macroeconomic data.
 
+## Screenshots
+
+Screenshots below are from the Streamlit UI (see "Running the Streamlit UI"). Each one
+shows the same structured response the API returns -- final answer, intent, order id,
+tool result, escalation/ticket result, and FAQ evidence -- so you can see what the agent
+actually did, not just what it said.
+
+**Home screen** -- the sidebar's example questions and the empty question box.
+
+![Streamlit Home](assets/streamlit_home.png)
+
+**Order status** -- "Where is my order ORD-1001?" resolves via `lookup_order_status`,
+showing the `order_status` intent, the extracted order id, and the full tool result.
+
+![Order Status Example](assets/order_status_example.png)
+
+**Refund eligibility** -- "Can I get a refund for ORD-1003?" runs
+`check_refund_eligibility`, grounded with refund-policy evidence from `refunds.md`.
+
+![Refund Eligibility Example](assets/refund_eligibility_example.png)
+
+**FAQ retrieval** -- "Do you ship internationally?" is answered from local FAQ
+retrieval alone (no tool call), with the matched `shipping.md` chunk shown as evidence.
+
+![FAQ Retrieval Example](assets/faq_retrieval_example.png)
+
+**Escalation & ticketing** -- "I am very angry and want to speak to a human." sets
+`needs_escalation = true` and creates a high-priority support ticket.
+
+![Escalation Ticket Example](assets/escalation_ticket_example.png)
+
+**Multi-turn follow-up** -- after "I want a refund." (no order id) asks for one, a
+bare `ORD-1003` reply continues the same refund request instead of starting over.
+
+![Multiturn Refund Example](assets/multiturn_refund_example.png)
+
 ## Architecture
 
 ```
