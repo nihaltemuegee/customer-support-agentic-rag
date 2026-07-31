@@ -12,6 +12,12 @@ class SupportState(TypedDict, total=False):
     # The raw question asked by the customer
     question: str
 
+    # Intent from the previous turn, passed in by the caller so a bare
+    # follow-up like "ORD-1001" (with no topic keywords of its own) can be
+    # understood in context. Only meaningful when that previous turn asked
+    # the customer for an order id. See Version 6: multi-turn support.
+    previous_intent: Optional[str]
+
     # Classified intent, e.g. "order_status", "refund_request", ...
     intent: str
 

@@ -193,3 +193,53 @@ def test_final_answer_includes_ticket_id_when_escalation_happens():
     assert result["escalation_result"] is not None
     ticket_id = result["escalation_result"]["ticket_id"]
     assert ticket_id in result["final_answer"]
+
+
+# --- Version 6: evaluation & multi-turn tests -------------------------------
+
+
+def test_multiturn_refund_without_order_id_asks_for_it():
+    result = run_support_workflow("I want a refund please.")
+    assert result["intent"] == "refund_request"
+    assert result["order_id"] is None
+    assert "order id" in result["final_answer"].lower()
+
+
+def test_multiturn_followup_message_with_order_id_reuses_refund_intent():
+    # Turn 1: no order id, so the assistant asks for one.
+    turn1 = run_support_workflow("I want a refund please.")
+    assert turn1["order_id"] is None
+
+    # Turn 2: a bare order id, with the previous turn's intent passed back in.
+    turn2 = run_support_workflow("ORD-1003", previous_intent=turn1["intent"])
+    assert turn2["intent"] == "refund_request"
+    assert turn2["order_id"] == "ORD-1003"
+    assert turn2["tool_result"]["found"] is True
+
+
+def test_multiturn_order_status_followup_with_order_id():
+    turn1 = run_support_workflow("Where is my order?")
+    assert turn1["intent"] == "order_status"
+    assert turn1["order_id"] is None
+
+    turn2 = run_support_workflow("ord-1001", previous_intent=turn1["intent"])
+    assert turn2["intent"] == "order_status"
+    assert turn2["tool_result"]["found"] is True
+    assert turn2["tool_result"]["status"] == "delivered"
+
+
+def test_bare_order_id_without_previous_intent_stays_unknown():
+    # No conversation context -- a bare order id alone has no topic keywords.
+    result = run_support_workflow("ORD-1001")
+    assert result["intent"] == "unknown"
+
+
+def test_evaluation_script_can_run(capsys):
+    from evaluation.run_evaluation import load_test_cases, run_evaluation
+
+    test_cases = load_test_cases()
+    assert len(test_cases) >= 12
+
+    run_evaluation()
+    captured = capsys.readouterr()
+    assert "Summary:" in captured.out

@@ -1,4 +1,4 @@
-# Customer Support Agentic RAG (Version 5)
+# Customer Support Agentic RAG (Version 6)
 
 A beginner-friendly demo of an **agentic workflow** for fictional e-commerce customer
 support, built with [LangGraph](https://github.com/langchain-ai/langgraph) and simple
@@ -39,8 +39,9 @@ Customer question
 Final answer + structured trace (intent, tool_result, evidence, escalation flag)
 ```
 
-**State object** (`src/graph/state.py`): `question`, `intent`, `order_id`, `evidence`,
-`tool_result`, `needs_escalation`, `escalation_result`, `final_answer`.
+**State object** (`src/graph/state.py`): `question`, `previous_intent` (optional,
+multi-turn context -- see Version 6), `intent`, `order_id`, `evidence`, `tool_result`,
+`needs_escalation`, `escalation_result`, `final_answer`.
 
 **Possible intents**: `order_status`, `refund_request`, `return_policy`,
 `shipping_question`, `warranty_question`, `complaint_escalation`, `general_faq`, `unknown`.
@@ -154,6 +155,14 @@ import isn't available.
 
 ```bash
 pytest
+```
+
+## Running the Evaluation Script
+
+See "Version 6: Evaluation & Multi-Turn Support" below for details.
+
+```bash
+python evaluation/run_evaluation.py
 ```
 
 ## Version 2: FAQ RAG
@@ -367,6 +376,90 @@ escalate) still happens inside the graph. The UI's only job is to call
 separation of concerns you'd want in a real product: the agent logic is UI-agnostic and
 already has both a REST API and a UI in front of it, unchanged.
 
+## Version 6: Evaluation & Multi-Turn Support
+
+Version 6 adds two small, unrelated-but-complementary things: a lightweight evaluation
+harness (a regression baseline you can run and read), and basic multi-turn support (so
+a one-word follow-up like "ORD-1001" isn't treated as a brand new, contextless message).
+
+### Evaluation harness
+
+`evaluation/test_cases.json` holds 14 hand-picked questions spanning all 8 intents,
+both escalating and non-escalating cases, and both tool-backed and FAQ-grounded
+answers. Each case lists what's expected:
+
+```json
+{
+  "question": "My order ORD-1005 arrived damaged. What should I do?",
+  "expected_intent": "refund_request",
+  "expected_needs_escalation": true,
+  "expected_tool_type": "refund_check",
+  "expected_evidence_source": "refunds.md"
+}
+```
+
+`evaluation/run_evaluation.py` runs `run_support_workflow()` (the same function the API
+and UI use) against every case and prints, per question: expected vs. actual intent,
+expected vs. actual escalation, and (when the case specifies them) expected vs. actual
+tool type and evidence source, followed by a final `Summary: X/Y passed (Z% accuracy)`
+line.
+
+```bash
+python evaluation/run_evaluation.py
+```
+
+`expected_tool_type` is `"order_lookup"`, `"refund_check"`, or `null` (no tool called);
+`expected_evidence_source` checks that a given FAQ filename appears *anywhere* in
+`evidence`, not that it's the top match -- the retriever's word-overlap scoring can tie
+between two similar sections, and this evaluation is meant to catch real regressions
+(a wrong intent, an escalation that stopped firing), not nitpick ranking order.
+
+This is deliberately not a testing framework or a golden-dataset pipeline -- it's a
+plain loop over a JSON file, kept next to (not instead of) the pytest suite in `tests/`,
+because a portfolio project benefits from being able to point at one file and say
+"here's 14 example conversations and what the agent is supposed to do with each."
+
+### Multi-turn support
+
+Previously, if `order_status` or `refund_request` was detected with no order id, the
+agent would ask for one -- but the *next* message (just `"ORD-1001"`, with no other
+words) had no topic keywords of its own, so `classify_intent_text` fell through to
+`"unknown"` and the conversation stalled.
+
+`run_support_workflow(question, previous_intent=None)` now accepts optional context
+from the prior turn. In `classify_intent` (`src/graph/nodes.py`), if the message is
+*nothing but* an order id (`is_only_order_id()`) and `previous_intent` is
+`"order_status"` or `"refund_request"`, that previous intent is reused directly instead
+of reclassifying from scratch:
+
+```python
+turn1 = run_support_workflow("I want a refund please.")
+# turn1["intent"] == "refund_request", turn1["order_id"] is None
+# turn1["final_answer"] asks for an order id
+
+turn2 = run_support_workflow("ORD-1003", previous_intent=turn1["intent"])
+# turn2["intent"] == "refund_request", turn2["order_id"] == "ORD-1003"
+# turn2["tool_result"] is a real check_refund_eligibility() result
+```
+
+**The server stays stateless -- no session storage.** `app/main.py`'s `/ask` endpoint
+takes an optional `previous_intent` field on the request; the caller (an API client or
+a UI) is responsible for remembering the prior response's `intent` and sending it back
+on the next call. That keeps this "local and simple" as required: no session IDs, no
+server-side conversation store, no database -- just one extra optional field the caller
+threads through.
+
+```bash
+curl -X POST http://127.0.0.1:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "ORD-1003", "previous_intent": "refund_request"}'
+```
+
+**Known limit:** the Streamlit UI (Version 5) doesn't yet track `previous_intent`
+between messages -- it's a single-shot Q&A box, not a chat thread. Multi-turn is fully
+working at the graph and API level (and covered by tests), but wiring a conversational
+UI on top is intentionally left for a later version to avoid overcomplicating this one.
+
 ## Version Roadmap
 
 - **v1** — Rule-based intent classification, linear LangGraph workflow, in-memory tools,
@@ -378,10 +471,14 @@ already has both a REST API and a UI in front of it, unchanged.
 - **v4** — Escalation decided independently of intent, with a `high`/`medium`/
   `low` priority model; ticket results live in their own `escalation_result` field;
   `final_answer` always mentions the ticket id when escalation happens.
-- **v5 (current)** — Streamlit UI (`ui/streamlit_app.py`) as a thin layer over the same
+- **v5** — Streamlit UI (`ui/streamlit_app.py`) as a thin layer over the same
   `run_support_workflow()` function the API uses, with an HTTP fallback; FastAPI is
   unchanged and still runs standalone.
-- **v6** — Swap rule-based classification for an LLM-based classifier; add conditional
+- **v6 (current)** — Evaluation harness (`evaluation/`) as a 14-case regression
+  baseline; basic multi-turn support via an optional `previous_intent` parameter, with
+  the server staying fully stateless.
+- **v7** — Swap rule-based classification for an LLM-based classifier; add conditional
   routing/branches in the graph based on tool results.
-- **v7** — Add real vector-based retrieval (e.g. Chroma) and embeddings for the FAQ data.
-- **v8** — Persistent storage for orders/tickets (a real database instead of CSV/JSON).
+- **v8** — Add real vector-based retrieval (e.g. Chroma) and embeddings for the FAQ data.
+- **v9** — Persistent storage for orders/tickets (a real database instead of CSV/JSON);
+  wire multi-turn context into the Streamlit UI as an actual chat thread.

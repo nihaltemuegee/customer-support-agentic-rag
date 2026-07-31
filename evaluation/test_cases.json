@@ -1,0 +1,114 @@
+[
+  {
+    "id": 1,
+    "question": "Where is my order ORD-1001?",
+    "expected_intent": "order_status",
+    "expected_needs_escalation": false,
+    "expected_tool_type": "order_lookup",
+    "expected_evidence_source": null
+  },
+  {
+    "id": 2,
+    "question": "Where is my order ORD-9999?",
+    "expected_intent": "order_status",
+    "expected_needs_escalation": false,
+    "expected_tool_type": "order_lookup",
+    "expected_evidence_source": null
+  },
+  {
+    "id": 3,
+    "question": "Can I get a refund for ORD-1001?",
+    "expected_intent": "refund_request",
+    "expected_needs_escalation": false,
+    "expected_tool_type": "refund_check",
+    "expected_evidence_source": "refunds.md"
+  },
+  {
+    "id": 4,
+    "question": "I want a refund please.",
+    "expected_intent": "refund_request",
+    "expected_needs_escalation": false,
+    "expected_tool_type": "refund_check",
+    "expected_evidence_source": "refunds.md"
+  },
+  {
+    "id": 5,
+    "question": "My order ORD-1005 arrived damaged. What should I do?",
+    "expected_intent": "refund_request",
+    "expected_needs_escalation": true,
+    "expected_tool_type": "refund_check",
+    "expected_evidence_source": "refunds.md"
+  },
+  {
+    "id": 6,
+    "question": "I am so angry, this service is terrible!",
+    "expected_intent": "complaint_escalation",
+    "expected_needs_escalation": true,
+    "expected_tool_type": null,
+    "expected_evidence_source": null
+  },
+  {
+    "id": 7,
+    "question": "What is your return policy?",
+    "expected_intent": "return_policy",
+    "expected_needs_escalation": false,
+    "expected_tool_type": null,
+    "expected_evidence_source": "returns.md"
+  },
+  {
+    "id": 8,
+    "question": "How long does shipping take?",
+    "expected_intent": "shipping_question",
+    "expected_needs_escalation": false,
+    "expected_tool_type": null,
+    "expected_evidence_source": "shipping.md"
+  },
+  {
+    "id": 9,
+    "question": "Is my keyboard covered under warranty?",
+    "expected_intent": "warranty_question",
+    "expected_needs_escalation": false,
+    "expected_tool_type": null,
+    "expected_evidence_source": "warranty.md"
+  },
+  {
+    "id": 10,
+    "question": "How do I reset my password?",
+    "expected_intent": "general_faq",
+    "expected_needs_escalation": false,
+    "expected_tool_type": null,
+    "expected_evidence_source": "account.md"
+  },
+  {
+    "id": 11,
+    "question": "What's the best pizza topping?",
+    "expected_intent": "unknown",
+    "expected_needs_escalation": false,
+    "expected_tool_type": null,
+    "expected_evidence_source": null
+  },
+  {
+    "id": 12,
+    "question": "Can I talk to a human, please?",
+    "expected_intent": "complaint_escalation",
+    "expected_needs_escalation": true,
+    "expected_tool_type": null,
+    "expected_evidence_source": null
+  },
+  {
+    "id": 13,
+    "question": "Do you ship internationally?",
+    "expected_intent": "shipping_question",
+    "expected_needs_escalation": false,
+    "expected_tool_type": null,
+    "expected_evidence_source": "shipping.md"
+  },
+  {
+    "id": 14,
+    "question": "My package was broken.",
+    "expected_intent": "refund_request",
+    "expected_needs_escalation": true,
+    "expected_tool_type": "refund_check",
+    "expected_evidence_source": "shipping.md"
+  }
+]

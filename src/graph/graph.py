@@ -38,8 +38,17 @@ def build_graph():
 support_graph = build_graph()
 
 
-def run_support_workflow(question: str) -> SupportState:
-    """Run the full graph for a single customer question and return the final state."""
+def run_support_workflow(question: str, previous_intent: str | None = None) -> SupportState:
+    """
+    Run the full graph for a single customer question and return the final state.
+
+    previous_intent is optional context from the prior turn (see Version 6:
+    multi-turn support in nodes.classify_intent) -- pass it when the previous
+    turn's answer asked the customer for an order id, so a bare follow-up
+    like "ORD-1001" is understood as continuing that same request.
+    """
     initial_state: SupportState = {"question": question}
+    if previous_intent:
+        initial_state["previous_intent"] = previous_intent
     result = support_graph.invoke(initial_state)
     return result

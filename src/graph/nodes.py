@@ -66,6 +66,11 @@ FAQ_RETRIEVAL_INTENTS = {
     "general_faq",
 }
 
+# Intents that ask the customer for an order id when one is missing (see
+# route_request). These are the only intents a bare order-id follow-up can
+# resume -- see Version 6: multi-turn support, is_only_order_id() below.
+FOLLOW_UP_INTENTS = {"order_status", "refund_request"}
+
 
 def extract_order_id(question: str) -> str | None:
     """
@@ -76,6 +81,16 @@ def extract_order_id(question: str) -> str | None:
     """
     match = ORDER_ID_PATTERN.search(question)
     return match.group(0).upper() if match else None
+
+
+def is_only_order_id(question: str) -> bool:
+    """
+    Whether the question is nothing but an order id (e.g. a bare follow-up
+    like "ORD-1001" or "ord-1001."), with no other words. Used for basic
+    multi-turn support -- see classify_intent().
+    """
+    stripped = question.strip().strip(".!?")
+    return ORDER_ID_PATTERN.fullmatch(stripped) is not None
 
 
 def is_damage_question(question: str) -> bool:
@@ -172,8 +187,24 @@ def receive_question(state: SupportState) -> dict:
 
 
 def classify_intent(state: SupportState) -> dict:
-    """Classify the customer's intent using simple keyword rules."""
-    intent = classify_intent_text(state["question"], state.get("order_id"))
+    """
+    Classify the customer's intent using simple keyword rules.
+
+    Basic multi-turn support: a bare follow-up like "ORD-1001" has no topic
+    keywords of its own, so classify_intent_text() alone would call it
+    "unknown". If the caller passed previous_intent (meaning the last turn
+    asked this customer for an order id) and this message is nothing but an
+    order id, reuse that previous intent instead of reclassifying from
+    scratch -- see run_support_workflow()'s previous_intent parameter.
+    """
+    question = state["question"]
+    order_id = state.get("order_id")
+    previous_intent = state.get("previous_intent")
+
+    if order_id and previous_intent in FOLLOW_UP_INTENTS and is_only_order_id(question):
+        return {"intent": previous_intent}
+
+    intent = classify_intent_text(question, order_id)
     return {"intent": intent}
 
 

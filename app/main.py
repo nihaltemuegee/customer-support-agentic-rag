@@ -19,6 +19,12 @@ app = FastAPI(title=APP_NAME)
 
 class AskRequest(BaseModel):
     question: str
+    # Optional: the previous turn's intent, so a bare follow-up like "ORD-1001"
+    # can be understood as continuing that request. See Version 6: multi-turn
+    # support. The server is stateless -- the caller (UI or API client) is
+    # responsible for remembering and re-sending this from the prior response's
+    # "intent" field when that prior turn asked for an order id.
+    previous_intent: Optional[str] = None
 
 
 class EvidenceItem(BaseModel):
@@ -44,7 +50,7 @@ def health() -> dict[str, str]:
 
 @app.post("/ask", response_model=AskResponse)
 def ask(request: AskRequest) -> AskResponse:
-    result = run_support_workflow(request.question)
+    result = run_support_workflow(request.question, previous_intent=request.previous_intent)
 
     return AskResponse(
         question=result["question"],
